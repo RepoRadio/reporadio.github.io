@@ -12,106 +12,26 @@ interface Episode {
   description: string;
 }
 
-// --- Series episode data structure for easy switching ---
-const seriesEpisodes: Record<string, Episode[]> = {
-  welcome: [
-    {
-      title: "Understanding RepoRadio: Features Overview",
-      filename: "ep1.mp3",
-      duration: "3:59",
-      description:
-        "Introduction to RepoRadio's revolutionary ability to transform static code documentation into dynamic audio narratives, exploring key features like contributor onboarding episodes, getting-started guides, and changelog summaries.",
-    },
-    {
-      title: "Installing RepoRadio: Step-by-Step Guide",
-      filename: "ep2.mp3",
-      duration: "4:11",
-      description:
-        "Complete walkthrough of installing RepoRadio, including setting up your OpenAI API key and installing via Go, with practical tips for getting started.",
-    },
-    {
-      title: "Creating Your First Podcast with RepoRadio",
-      filename: "ep3.mp3",
-      duration: "4:22",
-      description:
-        "Learn how to create and manage your first podcast episodes using RepoRadio CLI, covering best practices for content generation and transforming codebases into engaging audio content.",
-    },
-    {
-      title: "Using Your Generated Podcasts: Practical Applications",
-      filename: "ep4.mp3",
-      duration: "4:30",
-      description:
-        "Explore real-world applications of RepoRadio-generated podcasts, including enhancing contributor onboarding, streamlining learning processes, and integrating audio documentation into development workflows.",
-    },
-    {
-      title: "Maximizing Your Experience with RepoRadio",
-      filename: "ep5.mp3",
-      duration: "4:11",
-      description:
-        "Final episode covering tips for ongoing usage, maintaining fresh content, leveraging diverse use cases, and fostering team collaboration to get the most out of RepoRadio.",
-    },
-  ],
-  changelog: [
-    {
-      title: "Release Update: Latest Changes and Improvements",
-      filename: "ep1.mp3",
-      duration: "4:00",
-      description:
-        "A summary of the latest RepoRad.io release, covering new features like dynamic command execution, bug fixes, performance improvements, and breaking changes. This episode highlights how the tool now supports real-time data in episodes, improved documentation, better test coverage, and enhanced maintainability.",
-    },
-  ], // Placeholder for changelog episodes
-  contributor: [
-    {
-      title: "Introduction to RepoRadio",
-      filename: "ep1.mp3",
-      duration: "4:08",
-      description:
-        "An introduction to RepoRadio, covering its mission to turn Git repositories into engaging audio episodes. This episode explains project goals, features like onboarding, narrated guides, changelog summaries, and the philosophy of making documentation accessible for all learning styles. It also highlights community involvement and how to get in touch.",
-    },
-    {
-      title: "Setting Up Your Development Environment",
-      filename: "ep2.mp3",
-      duration: "4:19",
-      description:
-        "A step-by-step guide to getting started with RepoRadio, including obtaining an OpenAI API key, installing RepoRadio via Go, and generating your first podcast. This episode is perfect for new users eager to transform their codebases into audio content.",
-    },
-    {
-      title: "Understanding the Codebase Structure",
-      filename: "ep3.mp3",
-      duration: "4:33",
-      description:
-        "A deep dive into the RepoRadio codebase, explaining the importance of files like go.mod and the internal directory. Learn how the project is structured for maintainability and how these choices support accessible, engaging audio documentation.",
-    },
-    {
-      title: "Contributor Guidelines and Best Practices",
-      filename: "ep4.mp3",
-      duration: "4:39",
-      description:
-        "This episode covers the essential files and practices for contributing to RepoRadio, including .gitignore, Makefile, and coding standards. It offers tips for clear commit messages, regular pull requests, and keeping documentation up to date.",
-    },
-    {
-      title: "Testing in RepoRadio",
-      filename: "ep5.mp3",
-      duration: "4:18",
-      description:
-        "An overview of RepoRadio's testing framework, highlighting key test files and their roles in maintaining code quality and project stability. The episode explains why testing is vital for reliable audio documentation and open-source collaboration.",
-    },
-    {
-      title: "Generating Audio Episodes",
-      filename: "ep6.mp3",
-      duration: "4:34",
-      description:
-        "A practical walkthrough of generating audio episodes with RepoRadio. Learn about the create and generate commands, how the codebase processes repository data, and how AI-powered transcription and audio generation work behind the scenes.",
-    },
-    {
-      title: "What's Next for RepoRadio?",
-      filename: "ep7.mp3",
-      duration: "4:05",
-      description:
-        "A look ahead at the future of RepoRadio, including upcoming features, ways to stay involved, and the importance of community feedback. This episode wraps up the series and encourages listeners to contribute and help shape the project.",
-    },
-  ],
-};
+interface PlaylistResponse {
+  playlist: {
+    title: string;
+    description: string;
+    episodes: {
+      id: string;
+      title: string;
+      description: string;
+      audioFile: string;
+      transcriptFile: string;
+      summary: string;
+    }[];
+  };
+}
+
+interface SeriesState {
+  episodes: Episode[];
+  isLoading: boolean;
+  error: string | null;
+}
 
 export default function AudioPlayer() {
   const [selectedSeries, setSelectedSeries] = useState<
@@ -124,8 +44,64 @@ export default function AudioPlayer() {
   const [volume, setVolume] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // New state for managing playlists per series
+  const [seriesData, setSeriesData] = useState<Record<string, SeriesState>>({
+    welcome: { episodes: [], isLoading: false, error: null },
+    changelog: { episodes: [], isLoading: false, error: null },
+    contributor: { episodes: [], isLoading: false, error: null },
+  });
 
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // URLs for fetching playlist data
+  const getPlaylistUrl = (series: string) => {
+    return `https://raw.githubusercontent.com/RepoRadio/reporadio-cli/refs/heads/main/.reporadio/${series}/episodes/playlist.json`;
+  };
+
+  // Fetch playlist data for a specific series
+  const fetchPlaylist = async (series: "welcome" | "changelog" | "contributor") => {
+    setSeriesData(prev => ({
+      ...prev,
+      [series]: { ...prev[series], isLoading: true, error: null }
+    }));
+
+    try {
+      const response = await fetch(getPlaylistUrl(series));
+      if (!response.ok) {
+        throw new Error(`Failed to fetch playlist: ${response.status}`);
+      }
+      
+      const data: PlaylistResponse = await response.json();
+      
+      // Transform the playlist episodes to our Episode format
+      const episodes: Episode[] = data.playlist.episodes.map(ep => ({
+        title: ep.title,
+        filename: ep.audioFile,
+        description: ep.description
+      }));
+      
+      setSeriesData(prev => ({
+        ...prev,
+        [series]: { episodes, isLoading: false, error: null }
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load episodes";
+      setSeriesData(prev => ({
+        ...prev,
+        [series]: { episodes: [], isLoading: false, error: errorMessage }
+      }));
+    }
+  };
+
+  // Fetch playlist when component mounts or series changes
+  useEffect(() => {
+    const currentSeriesData = seriesData[selectedSeries];
+    // Only fetch if we don't have data and aren't already loading
+    if (currentSeriesData && currentSeriesData.episodes.length === 0 && !currentSeriesData.isLoading && !currentSeriesData.error) {
+      fetchPlaylist(selectedSeries);
+    }
+  }, [selectedSeries]);
 
   // Update getAudioUrl to use selectedSeries
   const getAudioUrl = (filename: string) => {
@@ -220,6 +196,7 @@ export default function AudioPlayer() {
   };
 
   const previousEpisode = () => {
+    if (!episodes || episodes.length === 0) return;
     const newIndex =
       currentEpisode > 0 ? currentEpisode - 1 : episodes.length - 1;
     setCurrentEpisode(newIndex);
@@ -228,6 +205,7 @@ export default function AudioPlayer() {
   };
 
   const nextEpisode = () => {
+    if (!episodes || episodes.length === 0) return;
     const newIndex =
       currentEpisode < episodes.length - 1 ? currentEpisode + 1 : 0;
     setCurrentEpisode(newIndex);
@@ -242,7 +220,8 @@ export default function AudioPlayer() {
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  const episodes = seriesEpisodes[selectedSeries];
+  const currentSeriesData = seriesData[selectedSeries];
+  const episodes = currentSeriesData?.episodes || [];
   const currentEpisodeData = episodes[currentEpisode] || {
     title: "",
     filename: "",
@@ -389,12 +368,21 @@ export default function AudioPlayer() {
       <div className="mt-6 pt-4 border-t border-gray-200">
         <h4 className="font-medium text-gray-900 mb-3">Episodes</h4>
         <div className="space-y-2">
-          {episodes.length === 0 ? (
+          {currentSeriesData?.isLoading ? (
+            <div className="flex items-center justify-center p-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-orange-600 border-t-transparent"></div>
+              <span className="ml-2 text-gray-500 text-sm">Loading episodes...</span>
+            </div>
+          ) : currentSeriesData?.error ? (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">Failed to load episodes for this series.</p>
+            </div>
+          ) : !episodes || episodes.length === 0 ? (
             <div className="text-gray-500 text-sm">
               No episodes available for this series.
             </div>
           ) : (
-            episodes.map((episode, index) => (
+            episodes.map((episode: Episode, index: number) => (
               <button
                 key={index}
                 onClick={() => {
