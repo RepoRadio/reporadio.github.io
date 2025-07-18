@@ -29,7 +29,6 @@ interface PlaylistResponse {
 
 interface SeriesState {
   episodes: Episode[];
-  isLoading: boolean;
   error: string | null;
 }
 
@@ -42,14 +41,13 @@ export default function AudioPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // New state for managing playlists per series
   const [seriesData, setSeriesData] = useState<Record<string, SeriesState>>({
-    welcome: { episodes: [], isLoading: false, error: null },
-    changelog: { episodes: [], isLoading: false, error: null },
-    contributor: { episodes: [], isLoading: false, error: null },
+    welcome: { episodes: [], error: null },
+    changelog: { episodes: [], error: null },
+    contributor: { episodes: [], error: null },
   });
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -63,7 +61,7 @@ export default function AudioPlayer() {
   const fetchPlaylist = async (series: "welcome" | "changelog" | "contributor") => {
     setSeriesData(prev => ({
       ...prev,
-      [series]: { ...prev[series], isLoading: true, error: null }
+      [series]: { ...prev[series], error: null }
     }));
 
     try {
@@ -78,18 +76,19 @@ export default function AudioPlayer() {
       const episodes: Episode[] = data.playlist.episodes.map(ep => ({
         title: ep.title,
         filename: ep.audioFile,
-        description: ep.description
+        description: ep.description,
+        duration: "" // We'll get this from the audio metadata
       }));
       
       setSeriesData(prev => ({
         ...prev,
-        [series]: { episodes, isLoading: false, error: null }
+        [series]: { episodes, error: null }
       }));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load episodes";
       setSeriesData(prev => ({
         ...prev,
-        [series]: { episodes: [], isLoading: false, error: errorMessage }
+        [series]: { episodes: [], error: errorMessage }
       }));
     }
   };
@@ -97,8 +96,8 @@ export default function AudioPlayer() {
   // Fetch playlist when component mounts or series changes
   useEffect(() => {
     const currentSeriesData = seriesData[selectedSeries];
-    // Only fetch if we don't have data and aren't already loading
-    if (currentSeriesData && currentSeriesData.episodes.length === 0 && !currentSeriesData.isLoading && !currentSeriesData.error) {
+    // Only fetch if we don't have data and no error
+    if (currentSeriesData && currentSeriesData.episodes.length === 0 && !currentSeriesData.error) {
       fetchPlaylist(selectedSeries);
     }
   }, [selectedSeries]);
@@ -129,15 +128,7 @@ export default function AudioPlayer() {
       setIsPlaying(false);
       setCurrentTime(0);
     };
-    const handleLoadStart = () => {
-      setIsLoading(true);
-      setError(null);
-    };
-    const handleCanPlay = () => {
-      setIsLoading(false);
-    };
     const handleError = () => {
-      setIsLoading(false);
       setError("Failed to load audio file");
       setIsPlaying(false);
     };
@@ -145,16 +136,12 @@ export default function AudioPlayer() {
     audio.addEventListener("timeupdate", updateTime);
     audio.addEventListener("loadedmetadata", updateDuration);
     audio.addEventListener("ended", handleEnded);
-    audio.addEventListener("loadstart", handleLoadStart);
-    audio.addEventListener("canplay", handleCanPlay);
     audio.addEventListener("error", handleError);
 
     return () => {
       audio.removeEventListener("timeupdate", updateTime);
       audio.removeEventListener("loadedmetadata", updateDuration);
       audio.removeEventListener("ended", handleEnded);
-      audio.removeEventListener("loadstart", handleLoadStart);
-      audio.removeEventListener("canplay", handleCanPlay);
       audio.removeEventListener("error", handleError);
     };
   }, [currentEpisode]);
@@ -275,11 +262,7 @@ export default function AudioPlayer() {
       {/* Episode Info */}
       <div className="flex items-center space-x-4 mb-4">
         <div className="h-12 w-12 bg-orange-600 rounded-lg flex items-center justify-center">
-          {isLoading ? (
-            <div className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent"></div>
-          ) : (
-            <Play className="h-6 w-6 text-white" />
-          )}
+          <Play className="h-6 w-6 text-white" />
         </div>
         <div className="text-left flex-1">
           <h3 className="font-semibold text-gray-900">
@@ -311,7 +294,7 @@ export default function AudioPlayer() {
           max={100}
           step={0.1}
           className="w-full"
-          disabled={isLoading || error !== null}
+          disabled={error !== null}
         />
         <div className="flex justify-between text-xs text-gray-500 mt-2">
           <span>{formatTime(currentTime)}</span>
@@ -325,14 +308,13 @@ export default function AudioPlayer() {
           variant="ghost"
           size="sm"
           onClick={previousEpisode}
-          disabled={isLoading}
         >
           <SkipBack className="h-4 w-4" />
         </Button>
 
         <Button
           onClick={togglePlayPause}
-          disabled={isLoading || error !== null}
+          disabled={error !== null}
           className="bg-orange-600 hover:bg-orange-700 text-white"
         >
           {isPlaying ? (
@@ -346,7 +328,6 @@ export default function AudioPlayer() {
           variant="ghost"
           size="sm"
           onClick={nextEpisode}
-          disabled={isLoading}
         >
           <SkipForward className="h-4 w-4" />
         </Button>
@@ -368,12 +349,7 @@ export default function AudioPlayer() {
       <div className="mt-6 pt-4 border-t border-gray-200">
         <h4 className="font-medium text-gray-900 mb-3">Episodes</h4>
         <div className="space-y-2">
-          {currentSeriesData?.isLoading ? (
-            <div className="flex items-center justify-center p-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-orange-600 border-t-transparent"></div>
-              <span className="ml-2 text-gray-500 text-sm">Loading episodes...</span>
-            </div>
-          ) : currentSeriesData?.error ? (
+          {currentSeriesData?.error ? (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-600">Failed to load episodes for this series.</p>
             </div>
